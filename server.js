@@ -8,44 +8,32 @@ app.use(express.json());
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
-const TWITTER_BEARER = process.env.TWITTER_BEARER;
 
-// webhook
-app.post("/webhook", async (req, res) => {
-    try {
-        const msg = req.body.message;
-
-        if (!msg || !msg.text) return res.sendStatus(200);
-
-        const text = msg.text;
-
-        // إرسال إلى تويتر
-        await axios.post(
-            "https://api.twitter.com/2/tweets",
-            { text: text },
-            {
-                headers: {
-                    "Authorization": `Bearer ${TWITTER_BEARER}`,
-                    "Content-Type": "application/json"
-                }
-            }
-        );
-
-        // رد في تيليجرام
-        await axios.post(`${TELEGRAM_API}/sendMessage`, {
-            chat_id: msg.chat.id,
-            text: "✅ تم نشر التغريدة بنجاح"
-        });
-
-        res.sendStatus(200);
-    } catch (err) {
-        console.log(err.response?.data || err.message);
-        res.sendStatus(200);
-    }
-});
-
+// اختبار الصفحة الرئيسية
 app.get("/", (req, res) => {
     res.send("Bot is running 🚀");
 });
 
-app.listen(3000, () => console.log("Server running on port 3000"));
+// webhook
+app.post("/webhook", async (req, res) => {
+    console.log("📩 وصل طلب من تيليجرام");
+
+    try {
+        const msg = req.body.message;
+
+        if (!msg) return res.sendStatus(200);
+
+        // رد بسيط
+        await axios.post(`${TELEGRAM_API}/sendMessage`, {
+            chat_id: msg.chat.id,
+            text: "🔥 البوت شغال 100%"
+        });
+
+    } catch (err) {
+        console.log("❌ خطأ:", err.message);
+    }
+
+    res.sendStatus(200);
+});
+
+app.listen(3000, () => console.log("🚀 Server running"));
