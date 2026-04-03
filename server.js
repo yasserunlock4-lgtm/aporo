@@ -1,63 +1,64 @@
 require("dotenv").config();
-
-const express = require("express");
-const axios = require("axios");
+const { Telegraf } = require("telegraf");
 const { TwitterApi } = require("twitter-api-v2");
 
-const app = express();
-app.use(express.json());
-
-// 🔹 Telegram
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
-
-// 🔹 Twitter
-const twitterClient = new TwitterApi({
-  appKey: process.env.TWITTER_API_KEY,
-  appSecret: process.env.TWITTER_API_SECRET,
+// ── Twitter client ─────────────────────────────────────────────────────────
+const twitter = new TwitterApi({
+  appKey: process.env.TWITTER_CONSUMER_KEY,
+  appSecret: process.env.TWITTER_CONSUMER_SECRET,
   accessToken: process.env.TWITTER_ACCESS_TOKEN,
-  accessSecret: process.env.TWITTER_ACCESS_SECRET,
+  accessSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET,
 });
 
-const rwClient = twitterClient.readWrite;
+// ── Telegram bot ───────────────────────────────────────────────────────────
+const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
-// ✅ الصفحة الرئيسية
-app.get("/", (req, res) => {
-  res.send("Bot is running 🚀");
-});
-
-// 🔥 webhook
-app.post("/webhook", async (req, res) => {
-  console.log("📩 رسالة وصلت");
-
-  try {
-    const msg = req.body.message;
-
-    if (!msg || !msg.text) return res.sendStatus(200);
-
-    const text = msg.text;
-
-    // 🐦 نشر في تويتر
-    await rwClient.v2.tweet(text);
-
-    // 📩 رد في تيليجرام
-    await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: msg.chat.id,
-      text: "🐦 تم نشر التغريدة بنجاح"
-    });
-
-  } catch (err) {
-    console.log("❌ خطأ تويتر:", err);
-
-    await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: req.body.message.chat.id,
-      text: "❌ فشل النشر في تويتر"
-    });
+// تقسيم النص إذا تجاوز 280 حرف
+function chunkText(text, size = 280) {
+  const words = text.split(" ");
+  const chunks = [];
+  let current = "";
+  for (const word of words) {
+    if ((current + " " + word).trim().length <= size) {
+      current = (current + " " + word).trim();
+    } else {
+      if (current) chunks.push(current);
+      current = word;
+    }
   }
+  if (current) chunks.push(current);
+  return chunks.length ? chunks : [""];
+}
 
-  res.sendStatus(200);
-});
+// معالج الرسائل
+async function handleText(ctx) {
+  const text = ctx.message?.text || ctx.channelPost?.text;
+  if (!text) return;
 
-app.listen(3000, () => {
-  console.log("🚀 Server running on port 3000");
-});
+  console.log("📨 رسالة جديدة:", text.slice(0, 60));
+
+  const chunks = chunkText(text);
+  let replyToId = null;
+
+  for (let i = 0; i < chunks.length; i++) {
+    try {
+      const params = {};
+      if (replyToId) params.reply = { in_reply_to_tweet_id: replyToId };
+
+      const tweet = await twitter.v2.tweet(chunks[i], params);
+      replyToId = tweet.data.id;
+      console.log(`✅ تغريدة ${i + 1}/${chunks.length} → id=${replyToId}`);
+    } catch (err) {
+      console.error(`❌ خطأ في التغريدة ${i + 1}:`, err.message);
+      break;
+    }
+  }
+}
+
+bot.on("text", handleText);
+bot.on("channel_post", handleText);
+
+bot.launch().then(() => console.log("🤖 البوت يعمل..."));
+
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));
